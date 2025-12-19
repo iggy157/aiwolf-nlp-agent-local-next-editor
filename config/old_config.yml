@@ -9,24 +9,21 @@ agent:
   kill_on_timeout: true
 
 llm:
-  type: google
+  type: openai
   sleep_time: 0
 
 openai:
-  model: gpt-4o
-  temperature: 1.0
+  model: gpt-4o-mini
+  temperature: 0.7
 
 google:
-  model: gemini-3-pro-preview
-  temperature: 1.0
+  model: gemini-2.0-flash-lite
+  temperature: 0.7
 
 ollama:
   model: llama3.1
   temperature: 0.7
   base_url: http://localhost:11434
-
-claude:
-  model: claude-opus-4-5-20251101
 
 prompt:
   initialize: |-
@@ -72,32 +69,46 @@ prompt:
     {{ w.agent }}: {{ w.text }}
     {% endfor %}
   talk: |-
+    {% for w in talk_history[sent_talk_count:] -%}
+    {{ w.agent }}: {{ w.text }}
+    ここまでの台本です。あなたはこの台本の続きを作成します。
+    {%- else -%}
+    人狼ゲームとして適切な最初のセリフを考えます。
+    {% endfor %}
     次に発話をする登場人物のパーソナル情報です。
     あなたの名前は{{ info.agent }}です。
-    あなたの性別は{{ info.gender }}です。
-    あなたの年齢は{{ info.age }}歳です。
     あなたの役職は{{ role.value }}です。
+    {{ role.value }}は
+    {%- if role.value == 'VILLAGER' -%}
+    - 表の振る舞い： 論理的に推理し、怪しい者を探して村に貢献する。
+    - 裏の目的： 人狼陣営をすべて見つけて吊り、人間陣営を勝利に導く。
+    {%- elif role.value == 'SEER' -%}
+    - 表の振る舞い： もし情報があれば適切にそれを開示し、怪しい者を探して村に貢献する。
+    - 裏の目的： 自分の真を示しつつ人狼を炙り出し、人間陣営を勝たせる。
+    {%- elif role.value == 'POSSESSED' -%}
+    - 表の振る舞い： あたかも人間陣営の一人かのように立ち回り、信用を得る。
+    - 裏の目的： 人狼に有利となる混乱を作り、最終的に人狼陣営を勝利させる。
+    {%- elif role.value == 'WEREWOLF' -%}
+    - 表の振る舞い： 市民のように振る舞い、疑われないように議論へ溶け込む。
+    - 裏の目的： 村を欺き、人間陣営を数で上回るまで生存し続けて勝利する。
+    {%- endif %}
+    このような役職です。
     {% if info.profile is not none -%}
     あなたのプロフィール: {{ info.profile }}
     {%- endif %}
+    この情報を参考に次のセリフのみを出力してください。心の声や状況説明は出力しないこと。
+    {% if info.day == 0 -%}
+    占い結果について触れないでください。
+    被害者について触れないでください。
+    占い結果も被害者もまだこの段階では出ていません。
+    {% elif info.day == 1 -%}
+    被害者について触れないでください。
+    投票結果について触れないでください。
+    被害者も投票結果もまだこの段階では出ていません。
+    {%- else -%}
+    持ちうる情報を活用しながら、役職としての目的を全うできるようなセリフを作成してください。
+    {%- endif %}
     「」や：などの使用は禁止します。
-    このゲームのルール
-    0日目：
-    - 占い結果無し
-    - 人狼による襲撃無し
-    - 投票なし
-    1日目：
-    - 占い結果あり
-    - 人狼による襲撃無し
-    - 投票あり
-    2日目以降：
-    - 占い結果あり
-    - 人狼による襲撃あり
-    - 投票あり
-    {% for w in talk_history[sent_talk_count:] -%}
-    {{ w.agent }}: {{ w.text }}
-    {% endfor %}
-    台本のなかで、次のセリフ一つのみを出力してください。
   daily_finish: |-
     昼終了リクエスト
     履歴:

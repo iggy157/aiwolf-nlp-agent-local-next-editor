@@ -9,11 +9,11 @@ agent:
   kill_on_timeout: true
 
 llm:
-  type: google
+  type: openai
   sleep_time: 0
 
 openai:
-  model: gpt-4o
+  model: gpt-5.2
   temperature: 1.0
 
 google:
@@ -34,16 +34,19 @@ prompt:
     以下に示す登場人物で行われる人狼ゲームの様子を記述した台本を作成します。
     人狼ゲーム台本記述のための基本設定
     登場人物一覧:
-    {% for agent_name in info.status_map.keys() -%}
-    - {{ agent_name }}
+    登場人物一覧:
+    {% for profile in profiles -%}
+    - name: {{ profile.name }}
+      {{ profile.role }}
+      age: {{ profile.age }}
+      gender: {{ profile.gender }}
+      personality: {{ profile.personality }}
     {% endfor %}
-    役職一覧:
+    役職一覧
     村人 × 2
     占い師 × 1
     狂人 × 1
     人狼 × 1
-    台本にはこれらの登場人物や役職以外を出現させないでください。
-    与えられた指示に従って、台本を作成してください。
   daily_initialize: |-
     昼開始リクエスト
     {{ info.day }}日目
@@ -72,16 +75,23 @@ prompt:
     {{ w.agent }}: {{ w.text }}
     {% endfor %}
   talk: |-
-    次に発話をする登場人物のパーソナル情報です。
-    あなたの名前は{{ info.agent }}です。
-    あなたの性別は{{ info.gender }}です。
-    あなたの年齢は{{ info.age }}歳です。
-    あなたの役職は{{ role.value }}です。
-    {% if info.profile is not none -%}
-    あなたのプロフィール: {{ info.profile }}
-    {%- endif %}
-    「」や：などの使用は禁止します。
-    このゲームのルール
+    あなたは人狼ゲームの台本を作成する作家です。
+    以下に示す登場人物で行われる人狼ゲームの様子を記述した台本を作成します。
+    人狼ゲーム台本記述のための基本設定
+    登場人物一覧:
+    {% for profile in profiles -%}
+    - name: {{ profile.name }}
+      {{ profile.role }}
+      age: {{ profile.age }}
+      gender: {{ profile.gender }}
+      personality: {{ profile.personality }}
+    {% endfor %}
+    役職一覧
+    村人 × 2
+    占い師 × 1
+    狂人 × 1
+    人狼 × 1
+
     0日目：
     - 占い結果無し
     - 人狼による襲撃無し
@@ -94,10 +104,23 @@ prompt:
     - 占い結果あり
     - 人狼による襲撃あり
     - 投票あり
-    {% for w in talk_history[sent_talk_count:] -%}
+    ゲームの進行方法
+    各日生存者の間で4周、会話をまわす（各生存者が4回ずつは発話をする）
+
+    勝利条件
+    人狼陣営の勝利条件：村人陣営は1人以下にする
+    村人陣営の勝利条件：人狼を追放する
+
+    {% if talk_history -%}
+    以下はここまでの履歴です。
+    履歴:
+    {% for w in talk_history -%}
     {{ w.agent }}: {{ w.text }}
     {% endfor %}
-    台本のなかで、次のセリフ一つのみを出力してください。
+    トークは与えられた履歴の次のセリフとして適切なもののみを出力してください。
+    {%- else -%}
+    人狼ゲーム最初の発話として適切な一つ目のセリフのみを出力してください。
+    {%- endif %}
   daily_finish: |-
     昼終了リクエスト
     履歴:

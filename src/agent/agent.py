@@ -7,14 +7,17 @@ from __future__ import annotations
 
 import os
 import random
+import re
 from pathlib import Path
 from time import sleep
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 
+import yaml
 from dotenv import load_dotenv
 from jinja2 import Template
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.output_parsers import StrOutputParser
+from langchain_anthropic import ChatAnthropic
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
@@ -73,8 +76,52 @@ class Agent:
         self.sent_whisper_count: int = 0
         self.llm_model: BaseChatModel | None = None
         self.llm_message_history: list[BaseMessage] = []
+        self.profiles: list[dict[str, Any]] = self._load_profiles()
 
         load_dotenv(Path(__file__).parent.joinpath("./../../config/.env"))
+
+    def _load_profiles(self) -> list[dict[str, Any]]:
+        """Load profiles from profiles.yml.
+
+        profiles.ymlからプロファイルを読み込む.
+
+        Returns:
+            list[dict[str, Any]]: List of profiles / プロファイルのリスト
+        """
+        profiles_path = Path(__file__).parent.joinpath("./../../config/profiles.yml")
+        if profiles_path.exists():
+            with profiles_path.open(encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+                return data.get("profiles", []) if data else []
+        return []
+
+    def _build_profiles_for_template(self) -> list[dict[str, Any]]:
+        """Build profiles list for template rendering.
+
+        テンプレートレンダリング用のプロファイルリストを作成する.
+        自分自身のプロファイルには役職を表示し、他のエージェントは「役職不明」とする.
+
+        Returns:
+            list[dict[str, Any]]: Filtered profiles for current game participants /
+                                    現在のゲーム参加者用にフィルタリングされたプロファイル
+        """
+        if not self.info or not self.info.status_map:
+            return []
+
+        agent_names = list(self.info.status_map.keys())
+        profiles_dict = {p["name"]: p for p in self.profiles}
+        result = []
+
+        for agent_name in agent_names:
+            if agent_name in profiles_dict:
+                profile = profiles_dict[agent_name].copy()
+                if agent_name == self.info.agent:
+                    profile["role"] = self.role.value if self.role else "役職不明"
+                else:
+                    profile["role"] = "役職不明"
+                result.append(profile)
+
+        return result
 
     @staticmethod
     def timeout(func: Callable[P, T]) -> Callable[P, T]:
@@ -187,6 +234,7 @@ class Agent:
             "role": self.role,
             "sent_talk_count": self.sent_talk_count,
             "sent_whisper_count": self.sent_whisper_count,
+            "profiles": self._build_profiles_for_template(),
         }
         template: Template = Template(prompt)
         prompt = template.render(**key).strip()
@@ -243,6 +291,13 @@ class Agent:
                     temperature=float(self.config["ollama"]["temperature"]),
                     base_url=str(self.config["ollama"]["base_url"]),
                 )
+            case "claude":
+                self.llm_model = ChatAnthropic(
+                    model_name=str(self.config["claude"]["model"]),
+                    timeout=None,
+                    stop=None,
+                    api_key=SecretStr(os.environ["CLAUDE_API_KEY"]),
+                )
             case _:
                 raise ValueError(model_type, "Unknown LLM type")
         self.llm_model = self.llm_model
@@ -267,6 +322,27 @@ class Agent:
         self.sent_whisper_count = len(self.whisper_history)
         return response or ""
 
+    def _extract_dialogue(self, text: str) -> str:
+        """Extract dialogue from LLM response.
+
+        LLMの応答からセリフ部分のみを抽出する.
+        **で囲まれた部分、:、：、「」を削除する.
+
+        Args:
+            text (str): LLM response text / LLMの応答テキスト
+
+        Returns:
+            str: Extracted dialogue / 抽出されたセリフ
+        """
+        # **で囲まれた部分を削除
+        result = re.sub(r"\*\*[^*]*\*\*", "", text)
+        # :と：を削除
+        result = result.replace(":", "").replace("：", "")
+        # 「と」を削除
+        result = result.replace("「", "").replace("」", "")
+        # 前後の空白を削除
+        return result.strip()
+
     def talk(self) -> str:
         """Return response to talk request.
 
@@ -277,7 +353,9 @@ class Agent:
         """
         response = self._send_message_to_llm(self.request)
         self.sent_talk_count = len(self.talk_history)
-        return response or ""
+        if response:
+            return self._extract_dialogue(response)
+        return ""
 
     def daily_finish(self) -> None:
         """Perform processing for daily finish request.
