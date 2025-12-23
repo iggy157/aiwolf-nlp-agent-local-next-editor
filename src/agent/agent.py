@@ -283,7 +283,7 @@ class Agent:
                 self.llm_model = ChatGoogleGenerativeAI(
                     model=str(self.config["google"]["model"]),
                     temperature=float(self.config["google"]["temperature"]),
-                    api_key=SecretStr(os.environ["GOOGLE_API_KEY"]),
+                    vertexai=True,
                 )
             case "ollama":
                 self.llm_model = ChatOllama(
